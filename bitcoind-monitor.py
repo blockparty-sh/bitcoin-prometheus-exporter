@@ -45,17 +45,12 @@ BITCOIN_DIFFICULTY = Gauge("bitcoin_difficulty", "Difficulty")
 BITCOIN_PEERS = Gauge("bitcoin_peers", "Number of peers")
 BITCOIN_CONN_IN = Gauge("bitcoin_conn_in", "Number of connections in")
 BITCOIN_CONN_OUT = Gauge("bitcoin_conn_out", "Number of connections out")
-BITCOIN_HASHPS_NEG1 = Gauge(
-    "bitcoin_hashps_neg1", "Estimated network hash rate per second since the last difficulty change"
-)
 BITCOIN_HASHPS_1 = Gauge(
     "bitcoin_hashps_1", "Estimated network hash rate per second for the last block"
 )
-BITCOIN_HASHPS = Gauge(
-    "bitcoin_hashps", "Estimated network hash rate per second for the last 120 blocks"
+BITCOIN_HASHPS_120 = Gauge(
+    "bitcoin_hashps_120", "Estimated network hash rate per second for the last 120 blocks"
 )
-
-BITCOIN_ESTIMATED_SMART_FEE_GAUGES = {}  # type: Dict[int, Gauge]
 
 BITCOIN_WARNINGS = Counter("bitcoin_warnings", "Number of network or blockchain warnings detected")
 BITCOIN_UPTIME = Gauge("bitcoin_uptime", "Number of seconds the Bitcoin daemon has been running")
@@ -78,9 +73,6 @@ BITCOIN_MEMPOOL_UNBROADCAST = Gauge(
 
 BITCOIN_LATEST_BLOCK_HEIGHT = Gauge(
     "bitcoin_latest_block_height", "Height or index of latest block"
-)
-BITCOIN_LATEST_BLOCK_WEIGHT = Gauge(
-    "bitcoin_latest_block_weight", "Weight of latest block according to BIP 141"
 )
 BITCOIN_LATEST_BLOCK_SIZE = Gauge("bitcoin_latest_block_size", "Size of latest block in bytes")
 BITCOIN_LATEST_BLOCK_TXS = Gauge(
@@ -140,7 +132,6 @@ BITCOIN_RPC_PORT = os.environ.get("BITCOIN_RPC_PORT", "8332")
 BITCOIN_RPC_USER = os.environ.get("BITCOIN_RPC_USER")
 BITCOIN_RPC_PASSWORD = os.environ.get("BITCOIN_RPC_PASSWORD")
 BITCOIN_CONF_PATH = os.environ.get("BITCOIN_CONF_PATH")
-SMART_FEES = [int(f) for f in os.environ.get("SMARTFEE_BLOCKS", "2,3,5,20").split(",")]
 METRICS_ADDR = os.environ.get("METRICS_ADDR", "")  # empty = any address
 METRICS_PORT = int(os.environ.get("METRICS_PORT", "9332"))
 RETRIES = int(os.environ.get("RETRIES", 5))
@@ -216,30 +207,12 @@ def getblockstats(block_hash: str):
         block = bitcoinrpc(
             "getblockstats",
             block_hash,
-            ["total_size", "total_weight", "totalfee", "txs", "height", "ins", "outs", "total_out"],
+            ["total_size", "totalfee", "txs", "height", "ins", "outs", "total_out"],
         )
     except Exception:
         logger.exception("Failed to retrieve block " + block_hash + " statistics from bitcoind.")
         return None
     return block
-
-
-def smartfee_gauge(num_blocks: int) -> Gauge:
-    gauge = BITCOIN_ESTIMATED_SMART_FEE_GAUGES.get(num_blocks)
-    if gauge is None:
-        gauge = Gauge(
-            "bitcoin_est_smart_fee_%d" % num_blocks,
-            "Estimated smart fee per kilobyte for confirmation in %d blocks" % num_blocks,
-        )
-        BITCOIN_ESTIMATED_SMART_FEE_GAUGES[num_blocks] = gauge
-    return gauge
-
-
-def do_smartfee(num_blocks: int) -> None:
-    smartfee = bitcoinrpc("estimatesmartfee", num_blocks).get("feerate")
-    if smartfee is not None:
-        gauge = smartfee_gauge(num_blocks)
-        gauge.set(smartfee)
 
 
 def refresh_metrics() -> None:
@@ -254,7 +227,6 @@ def refresh_metrics() -> None:
     txstats = bitcoinrpc("getchaintxstats")
     latest_blockstats = getblockstats(str(blockchaininfo["bestblockhash"]))
     hashps_120 = float(bitcoinrpc("getnetworkhashps", 120))  # 120 is the default
-    hashps_neg1 = float(bitcoinrpc("getnetworkhashps", -1))
     hashps_1 = float(bitcoinrpc("getnetworkhashps", 1))
 
     banned = bitcoinrpc("listbanned")
@@ -267,16 +239,12 @@ def refresh_metrics() -> None:
     if "connections_out" in networkinfo:
         BITCOIN_CONN_OUT.set(networkinfo["connections_out"])
     BITCOIN_DIFFICULTY.set(blockchaininfo["difficulty"])
-    BITCOIN_HASHPS.set(hashps_120)
-    BITCOIN_HASHPS_NEG1.set(hashps_neg1)
+    BITCOIN_HASHPS_120.set(hashps_120)
     BITCOIN_HASHPS_1.set(hashps_1)
     BITCOIN_SERVER_VERSION.set(networkinfo["version"])
     BITCOIN_PROTOCOL_VERSION.set(networkinfo["protocolversion"])
     BITCOIN_SIZE_ON_DISK.set(blockchaininfo["size_on_disk"])
     BITCOIN_VERIFICATION_PROGRESS.set(blockchaininfo["verificationprogress"])
-
-    for smartfee in SMART_FEES:
-        do_smartfee(smartfee)
 
     for ban in banned:
         BITCOIN_BAN_CREATED.labels(
@@ -313,11 +281,10 @@ def refresh_metrics() -> None:
         BITCOIN_LATEST_BLOCK_SIZE.set(latest_blockstats["total_size"])
         BITCOIN_LATEST_BLOCK_TXS.set(latest_blockstats["txs"])
         BITCOIN_LATEST_BLOCK_HEIGHT.set(latest_blockstats["height"])
-        BITCOIN_LATEST_BLOCK_WEIGHT.set(latest_blockstats["total_weight"])
         BITCOIN_LATEST_BLOCK_INPUTS.set(latest_blockstats["ins"])
         BITCOIN_LATEST_BLOCK_OUTPUTS.set(latest_blockstats["outs"])
-        BITCOIN_LATEST_BLOCK_VALUE.set(latest_blockstats["total_out"] / SATS_PER_COIN)
-        BITCOIN_LATEST_BLOCK_FEE.set(latest_blockstats["totalfee"] / SATS_PER_COIN)
+        BITCOIN_LATEST_BLOCK_VALUE.set(float(latest_blockstats["total_out"]) / SATS_PER_COIN)
+        BITCOIN_LATEST_BLOCK_FEE.set(float(latest_blockstats["totalfee"]) / SATS_PER_COIN)
 
     # Subtract one because we don't want to count the "getrpcinfo" call itself
     BITCOIN_RPC_ACTIVE.set(len(rpcinfo["active_commands"]) - 1)
