@@ -1,6 +1,6 @@
-# Bitcoin Core Prometheus Exporter
+# Bitcoin Cash Prometheus Exporter
 
-A [Prometheus] exporter for [Bitcoin Core] nodes written in python and packaged for running as a container.
+A [Prometheus] exporter for [Bitcoin Cash] nodes written in python and packaged for running as a container.
 
 A rudimentary Grafana [dashboard] is available in the [`dashboard/bitcoin-grafana.json`](dashboard/bitcoin-grafana.json)
 file.
@@ -8,7 +8,6 @@ file.
 The main script is a modified version of [`bitcoin-monitor.py`][source-gist], updated to remove the need for the
 `bitcoin-cli` binary, packaged into a [Docker image][docker-image], and expanded to export additional metrics.
 
-[Bitcoin Core]: https://github.com/bitcoin/bitcoin
 [Prometheus]: https://github.com/prometheus/prometheus
 [docker-image]: https://hub.docker.com/r/jvstein/bitcoin-prometheus-exporter
 
